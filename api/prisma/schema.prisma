@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Config {
+  id          Int        @id @default(autoincrement())
+  key         String     @unique
+  value       String
+  type        ConfigType
+  createdAt   DateTime   @default(now())
+  modeifiedAt DateTime   @updatedAt
+}
+
+enum ConfigType {
+  STRING
+  BOOLEAN
+  NUMBER
+}
+
+model User {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  name      String
+  role      Role     @default(USER)
+  orders    Order[]
+}
+
+enum Role {
+  USER
+  VIP
+  ADMIN
+}
+
+model Order {
+  id          String              @id @default(cuid())
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  createdAt   DateTime            @default(now())
+  modifiedAt  DateTime            @updatedAt
+  status      OrderStatus         @default(INQUEUE)
+  ingredients IngredientOnOrder[]
+}
+
+enum OrderStatus {
+  INQUEUE
+  BEINGMADE
+  DONE
+}
+
+model Ingredient {
+  id         String              @id @default(cuid())
+  createdAt  DateTime            @default(now())
+  modifiedAt DateTime            @updatedAt
+  name       String
+  type       IngredientTypes
+  enabled    Boolean             @default(true)
+  orders     IngredientOnOrder[]
+}
+
+enum IngredientTypes {
+  BREAD
+  CHEESE
+  MEAT
+  SPECIAL
+}
+
+model IngredientOnOrder {
+  order            Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId          String
+  ingredient       Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  ingredientId     String
+  ingredientNumber Int
+
+  @@id([orderId, ingredientId])
+}
