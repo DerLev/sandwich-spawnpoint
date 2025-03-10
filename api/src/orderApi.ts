@@ -63,7 +63,7 @@ orderApi.post("/new", async (c) => {
     },
   })
 
-  return c.json(order)
+  return c.json(order, 201)
 })
 
 /* Restrict all other order endpoint to admins only */
@@ -284,7 +284,7 @@ orderApi.delete("/delete/:id", async (c) => {
       throw errorResponse(500, "Could not delete order", err)
     })
 
-  return c.json({ code: 200, message: "Order deleted" })
+  return c.body(null, 204)
 })
 
 export default orderApi

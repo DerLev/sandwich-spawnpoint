@@ -80,7 +80,7 @@ ingredientApi.post("/add", async (c) => {
   /* Create ingredient in db */
   const ingredient = await prisma.ingredient.create({ data: body })
 
-  return c.json(ingredient)
+  return c.json(ingredient, 201)
 })
 
 /**
@@ -183,7 +183,7 @@ ingredientApi.delete("/delete/:id", async (c) => {
       throw errorResponse(500, "Error with deletion!", err)
     })
 
-  return c.json({ code: 200, message: "Ingredient successfully deleted!" })
+  return c.body(null, 204)
 })
 
 export default ingredientApi

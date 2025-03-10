@@ -37,7 +37,7 @@ userApi.post("/new", async (c) => {
   /* Create JWT for user */
   const jwt = await generateJwt(User.id, User.name, User.role)
 
-  return c.json({ ...User, ...jwt })
+  return c.json({ ...User, ...jwt }, 201)
 })
 
 /**

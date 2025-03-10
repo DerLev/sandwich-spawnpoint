@@ -118,11 +118,11 @@ export const getConfig = async () => {
     } else if (row.type === "NUMBER") {
       return { ...row, value: Number(row.value) }
     } else if (row.type === "PASSWORD") {
-      return { ...row, value: "" }
+      return
     } else {
       return row
     }
-  })
+  }).filter((item) => item !== undefined)
 
   /* Convert array into object */
   const resObject: { [key: string]: string | boolean | number } = {}
