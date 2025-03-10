@@ -1,3 +1,4 @@
+import { hash, verify } from "argon2"
 import prisma from "./prismaInstance.js"
 
 /**
@@ -14,6 +15,11 @@ const defaultConfig = [
     type: "BOOLEAN",
     value: "false",
   },
+  {
+    key: "adminUpgradePassword",
+    type: "PASSWORD",
+    value: "ChangeMe#1",
+  },
 ] as const
 
 /**
@@ -26,7 +32,7 @@ export const checkAppConfig = async () => {
     throw err
   })
 
-  /* Delete unnecessarry config rows */
+  /* Delete unnecessary config rows */
   const deleteActions = configInDb
     .map((row) => {
       if (
@@ -43,8 +49,22 @@ export const checkAppConfig = async () => {
     throw err
   })
 
+  /* Create password hashes if applicable */
+  const hashedConfigPromises = defaultConfig.map(async (row) => {
+    if (row.type === "PASSWORD") {
+      return {
+        ...row,
+        value: await hash(row.value),
+      }
+    } else {
+      return row
+    }
+  })
+
+  const hashedConfig = await Promise.all(hashedConfigPromises)
+
   /* create config rows their default values */
-  const createActions = defaultConfig
+  const createActions = hashedConfig
     .map((configObject) => {
       if (configInDb.findIndex((row) => row.key === configObject.key) < 0) {
         return prisma.config.create({
@@ -65,6 +85,7 @@ type ConfigTypeMap = {
   STRING: string
   NUMBER: number
   BOOLEAN: boolean
+  PASSWORD: string
 }
 
 /* Some TS magic made by claude.ai */
@@ -96,6 +117,8 @@ export const getConfig = async () => {
       }
     } else if (row.type === "NUMBER") {
       return { ...row, value: Number(row.value) }
+    } else if (row.type === "PASSWORD") {
+      return { ...row, value: "" }
     } else {
       return row
     }
@@ -119,13 +142,53 @@ export const updateConfig = async <K extends keyof ConfigObject>(
   setting: K,
   value: ConfigObject[K],
 ) => {
-  await prisma.config.update({
-    where: {
-      key: setting,
-    },
+  await prisma.config
+    .update({
+      where: {
+        key: setting,
+      },
 
-    data: {
-      value: String(value),
+      data: {
+        value: String(value),
+      },
+    })
+    .catch((err) => {
+      throw new Error("Error when updating config object. Does it exist?", {
+        cause: err,
+      })
+    })
+}
+
+type StringKeys<T> = {
+  [K in keyof T]: T[K] extends string ? K : never
+}[keyof T]
+
+/**
+ * Validate a password from the app config
+ * @param password The config object that will be checked against
+ * @param value The password to be checked
+ */
+export const validateConfigPassword = async <
+  K extends StringKeys<ConfigObject>,
+>(
+  password: K,
+  value: string,
+) => {
+  const configRow = await prisma.config.findFirst({
+    where: {
+      key: password,
     },
   })
+
+  if (!configRow) {
+    throw new Error("This config object does not exist")
+  }
+
+  if (configRow.type !== "PASSWORD") {
+    throw new Error("This config object is not of type password")
+  }
+
+  const isPasswordValid = await verify(configRow.value, value)
+
+  return isPasswordValid
 }

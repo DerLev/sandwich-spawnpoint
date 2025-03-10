@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import prisma from "./lib/prismaInstance.js"
-import { getConfig } from "./lib/appConfig.js"
+import { getConfig, validateConfigPassword } from "./lib/appConfig.js"
 import errorResponse, { bodyErrorResponse } from "./lib/errorResponse.js"
 import { $Enums } from "@prisma/client"
 import { generateJwt, jwtMiddleware, type JwtVariables } from "./lib/jwtAuth.js"
@@ -79,6 +79,65 @@ api.get("/user/list", async (c) => {
   })
 
   return c.json(Users)
+})
+
+/**
+ * @description
+ */
+const userUpgradeAdminSchema = z.object({
+  password: z.string(),
+})
+
+/* Restrict admin user upgrades to authenticated users that are currently no admin  */
+api.use("/user/upgrade/admin", jwtMiddleware(["USER", "VIP"]))
+
+/* User upgrade to admin */
+api.post("/user/upgrade/admin", async (c) => {
+  /* Validate the request body */
+  const bodyRaw = await c.req.json().catch(() => {
+    throw errorResponse(400, "A JSON body must be supplied")
+  })
+  const {
+    success,
+    data: body,
+    error,
+  } = userUpgradeAdminSchema.safeParse(bodyRaw)
+  if (!success) {
+    throw bodyErrorResponse(400, error)
+  }
+
+  /* Check if the password is correct */
+  const isValid = await validateConfigPassword(
+    "adminUpgradePassword",
+    body.password,
+  )
+
+  if (!isValid) {
+    throw errorResponse(403, "Invalid password")
+  }
+
+  /* Update user in DB */
+  const newUserData = await prisma.user.update({
+    where: {
+      id: c.get("jwtPayload").sub,
+    },
+    data: {
+      role: "ADMIN",
+    },
+  })
+
+  /* Create a new JWT for the user */
+  const newJwt = await generateJwt(
+    newUserData.id,
+    newUserData.name,
+    newUserData.role,
+    c.get("jwtPayload").exp,
+  )
+
+  return c.json({
+    ...newUserData,
+    ...newJwt,
+  })
 })
 
 /**

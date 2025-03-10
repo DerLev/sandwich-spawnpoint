@@ -31,6 +31,7 @@ export const generateJwt = async (
   uid: string,
   name: string,
   role: $Enums.Role,
+  exp?: number,
 ) => {
   const expiresIn = 60 * 60 * 18
 
@@ -39,10 +40,10 @@ export const generateJwt = async (
     name,
     role,
     iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + expiresIn,
+    exp: exp || Math.floor(Date.now() / 1000) + expiresIn,
   })
 
-  const jwt = await sign( payload, jwtSecret, jwtAlgorithm )
+  const jwt = await sign(payload, jwtSecret, jwtAlgorithm)
 
   return {
     token: jwt,
@@ -141,7 +142,7 @@ export const jwtMiddleware = (
         ctx,
         403,
         "insufficient_scope",
-        "You don't have access to this ressource",
+        "You don't have access to this resource",
       )
     }
 
