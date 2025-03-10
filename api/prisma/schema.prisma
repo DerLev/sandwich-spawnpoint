@@ -24,11 +24,12 @@ enum ConfigType {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  name      String
-  role      Role     @default(USER)
-  orders    Order[]
+  id                 String       @id @default(cuid())
+  createdAt          DateTime     @default(now())
+  name               String
+  role               Role         @default(USER)
+  orders             Order[]
+  bruteforceAttempts Bruteforce[]
 }
 
 enum Role {
@@ -78,4 +79,18 @@ model IngredientOnOrder {
   ingredientNumber Int
 
   @@id([orderId, ingredientId])
+}
+
+model Bruteforce {
+  id        Int               @id @default(autoincrement())
+  user      User?             @relation(fields: [userId], references: [id])
+  userId    String?
+  ip        String
+  createdAt DateTime          @default(now())
+  action    BruteforceActions
+}
+
+enum BruteforceActions {
+  ADMINPROMOTE
+  VIPPROMOTE
 }
