@@ -4,7 +4,6 @@ import { checkAppConfig } from "./lib/appConfig.js"
 import api from "./api.js"
 import prisma from "./lib/prismaInstance.js"
 import { serveStatic } from "@hono/node-server/serve-static"
-import sync from "./sync.js"
 
 /* === ENV defaults === */
 
@@ -39,9 +38,6 @@ if (process.env.NODE_ENV === "production") {
 
 /* All REST API routes */
 app.route("/api", api)
-
-/* ElectricSQL sync endpoint */
-app.route("/", sync)
 
 /* eslint-disable no-console */
 serve(

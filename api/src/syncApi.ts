@@ -6,7 +6,7 @@ import { fromError } from "zod-validation-error"
 import toQueryParams from "./lib/toQueryParams.js"
 import { jwtMiddleware, type JwtVariables } from "./lib/jwtAuth.js"
 
-const sync = new Hono<{ Variables: JwtVariables }>()
+const syncApi = new Hono<{ Variables: JwtVariables }>()
 
 /**
  * @description Query params validation schema for ElectricSQL sync endpoint
@@ -23,10 +23,10 @@ const syncQuerySchema = z.object({
 })
 
 /* Restrict sync to authenticated users */
-sync.use("/sync", jwtMiddleware())
+syncApi.use("/sync", jwtMiddleware())
 
 /* ElectricSQL proxy */
-sync.get("/sync", async (c) => {
+syncApi.get("/sync", async (c) => {
   /* Validate query params */
   const searchQueryRaw = c.req.query()
   const {
@@ -48,4 +48,4 @@ sync.get("/sync", async (c) => {
   )
 })
 
-export default sync
+export default syncApi
