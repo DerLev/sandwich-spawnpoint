@@ -1,12 +1,11 @@
 import { Hono } from "hono"
-import type { JwtVariables } from "./lib/jwtAuth.js"
 import userApi from "./userApi.js"
 import orderApi from "./orderApi.js"
 import ingredientApi from "./ingredientApi.js"
 import syncApi from "./syncApi.js"
 import configApi from "./configApi.js"
 
-const api = new Hono<{ Variables: JwtVariables }>()
+const api = new Hono()
 
 api.get("/", (c) => {
   /* NOTE: Maybe do some docs here? */
