@@ -6,6 +6,8 @@ import { z } from "zod"
 import { $Enums } from "@prisma/client"
 import castStringToBoolean from "./lib/castStringToBoolean.js"
 import { validateConfigPassword } from "./lib/appConfig.js"
+import { addBfAttempt, checkForBruteforce } from "./lib/bruteforceProtection.js"
+import { getConnInfo } from "@hono/node-server/conninfo"
 
 const userApi = new Hono<{ Variables: JwtVariables }>()
 
@@ -100,6 +102,20 @@ userApi.post("/upgrade/admin", async (c) => {
     throw bodyErrorResponse(400, error)
   }
 
+  /* Get all info about the client */
+  const connectionInfo = getConnInfo(c)
+
+  /* Check if user is not suspected of bruteforcing */
+  const isAllowedToContinue = await checkForBruteforce({
+    uid: c.get("jwtPayload").sub,
+    ip: connectionInfo.remote.address,
+    action: "ADMINPROMOTE",
+  })
+
+  if (!isAllowedToContinue) {
+    throw errorResponse(403, "Not allowed to perform action")
+  }
+
   /* Check if the password is correct */
   const isValid = await validateConfigPassword(
     "adminUpgradePassword",
@@ -107,6 +123,12 @@ userApi.post("/upgrade/admin", async (c) => {
   )
 
   if (!isValid) {
+    /* Record failed attempt in bruteforce table */
+    await addBfAttempt({
+      action: "ADMINPROMOTE",
+      ip: connectionInfo.remote.address || "::",
+      uid: c.get("jwtPayload").sub,
+    })
     throw errorResponse(403, "Invalid password")
   }
 

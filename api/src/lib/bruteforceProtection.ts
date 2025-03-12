@@ -62,6 +62,8 @@ export const checkForBruteforce = async (input: {
   /* Action allowed */
   let allowAction = true
 
+  /* NOTE: This can be consolidated into one query. This works for now */
+
   /* If uid is supplied */
   if (input.uid) {
     /* Get all bruteforce attempts by this user */
