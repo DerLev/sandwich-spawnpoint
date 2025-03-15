@@ -39,6 +39,11 @@ if (process.env.NODE_ENV === "production") {
 /* All REST API routes */
 app.route("/api", api)
 
+/* Endpoint for monitoring container's health */
+app.get("/healthz", (c) => {
+  return c.json({ code: 200, message: "Ok" })
+})
+
 /* eslint-disable no-console */
 serve(
   {

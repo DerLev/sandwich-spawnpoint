@@ -42,6 +42,14 @@ userApi.post("/new", async (c) => {
   return c.json({ ...User, ...jwt }, 201)
 })
 
+/* Restrict userinfo endpoint to logged in users */
+userApi.use("/me", jwtMiddleware())
+
+/* Userinfo endpoint */
+userApi.get("/me", (c) => {
+  return c.json(c.get("jwtPayload"))
+})
+
 /**
  * @description Query params validation schema for listing users
  */
