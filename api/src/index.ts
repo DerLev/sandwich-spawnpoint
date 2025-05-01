@@ -1,9 +1,10 @@
+import { OpenAPIHono } from "@hono/zod-openapi"
 import { serve } from "@hono/node-server"
-import { Hono } from "hono"
 import { checkAppConfig } from "./lib/appConfig.js"
 import api from "./api.js"
 import prisma from "./lib/prismaInstance.js"
 import { serveStatic } from "@hono/node-server/serve-static"
+import { defaultHook } from "./lib/openApi.js"
 
 /* === ENV defaults === */
 
@@ -25,7 +26,7 @@ if (!process.env.ELECTRIC_URL?.length) {
 
 /* === */
 
-const app = new Hono()
+const app = new OpenAPIHono({ defaultHook })
 
 if (process.env.NODE_ENV === "production") {
   /* Serve static files */
@@ -42,6 +43,25 @@ app.route("/api", api)
 /* Endpoint for monitoring container's health */
 app.get("/healthz", (c) => {
   return c.json({ code: 200, message: "Ok" })
+})
+
+app.openAPIRegistry.registerComponent("securitySchemes", "Bearer", {
+  type: "http",
+  scheme: "bearer",
+})
+
+/* Generate the OpenAPI Spec json file */
+app.doc31("/oas/openapi.json", {
+  openapi: "3.1.1",
+  info: {
+    title: "Sandwich Spawnpoint API",
+    version: "1.0.0",
+    description: "Sandwich ordering service",
+    license: {
+      name: "MIT",
+      url: "https://raw.githubusercontent.com/DerLev/sandwich-spawnpoint/refs/heads/main/LICENSE",
+    },
+  },
 })
 
 /* eslint-disable no-console */

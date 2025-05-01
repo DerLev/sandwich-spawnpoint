@@ -1,38 +1,68 @@
-import { Hono } from "hono"
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi"
 import { jwtMiddleware, type JwtVariables } from "./lib/jwtAuth.js"
 import { getConfig } from "./lib/appConfig.js"
-import { z } from "zod"
-import errorResponse, { bodyErrorResponse } from "./lib/errorResponse.js"
+import errorResponse from "./lib/errorResponse.js"
 import prisma from "./lib/prismaInstance.js"
 import { hash } from "argon2"
+import { defaultHook } from "./lib/openApi.js"
 
-const configApi = new Hono<{ Variables: JwtVariables }>()
+const configApi = new OpenAPIHono<{ Variables: JwtVariables }>({ defaultHook })
 
 /* Get app config */
-configApi.get("/get", async (c) => {
+const getRoute = createRoute({
+  method: "get",
+  path: "/get",
+  description: "Get the current app config",
+  tags: ["App Config"],
+  responses: {
+    200: {
+      description: "Current app config",
+    },
+  },
+})
+
+configApi.openapi(getRoute, async (c) => {
   const config = await getConfig()
   return c.json(config)
 })
 
 /* Body validation schema for config modifications */
 const configModifySchema = z.object({
-  object: z.string(),
-  value: z.union([z.string(), z.boolean(), z.number()]),
+  object: z.string().openapi({ example: "allowOrders" }),
+  value: z
+    .union([z.string(), z.boolean(), z.number()])
+    .openapi({ example: true }),
 })
 
-/* Restrict config modifications to admins only */
-configApi.use("/modify", jwtMiddleware(["ADMIN"]))
+/* Route definition for config modifications */
+const modifyRoute = createRoute({
+  method: "patch",
+  path: "/modify",
+  description:
+    "Updates an app config entry\n\n**Note:** Needs administrator privileges",
+  tags: ["App Config"],
+  security: [{ Bearer: [] }],
+  middleware: [jwtMiddleware(["ADMIN"])] as const,
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: configModifySchema,
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    204: {
+      description: "Config key changed",
+    },
+  },
+})
 
 /* Modify config object */
-configApi.patch("/modify", async (c) => {
-  /* Validate request body */
-  const bodyRaw = await c.req.json().catch(() => {
-    throw errorResponse(400, "A JSON body must be supplied")
-  })
-  const { success, data: body, error } = configModifySchema.safeParse(bodyRaw)
-  if (!success) {
-    throw bodyErrorResponse(400, error)
-  }
+configApi.openapi(modifyRoute, async (c) => {
+  const body = c.req.valid("json")
 
   /* Get config object */
   const currentConfigObject = await prisma.config.findFirst({

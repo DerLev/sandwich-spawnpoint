@@ -1,16 +1,19 @@
-import { Hono } from "hono"
+import { OpenAPIHono } from "@hono/zod-openapi"
 import userApi from "./userApi.js"
 import orderApi from "./orderApi.js"
 import ingredientApi from "./ingredientApi.js"
 import syncApi from "./syncApi.js"
 import configApi from "./configApi.js"
+import { cors } from "hono/cors"
+import { swaggerUI } from "@hono/swagger-ui"
 
-const api = new Hono()
+const api = new OpenAPIHono()
 
-api.get("/", (c) => {
-  /* NOTE: Maybe do some docs here? */
-  return c.json({ code: 200, msg: "Hello World!" })
-})
+/* Some CORS */
+api.use(cors())
+
+/* Swagger UI */
+api.get("/swagger", swaggerUI({ url: "/oas/openapi.json" }))
 
 /* ElectricSQL route */
 api.route("/", syncApi)

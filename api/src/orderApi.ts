@@ -1,41 +1,68 @@
-import { Hono } from "hono"
+import { OpenAPIHono, z, createRoute } from "@hono/zod-openapi"
 import type { JwtVariables } from "hono/jwt"
-import { z } from "zod"
 import { jwtMiddleware } from "./lib/jwtAuth.js"
 import { getConfig } from "./lib/appConfig.js"
-import errorResponse, { bodyErrorResponse } from "./lib/errorResponse.js"
+import errorResponse from "./lib/errorResponse.js"
 import prisma from "./lib/prismaInstance.js"
 import { $Enums } from "@prisma/client"
-import { fromError } from "zod-validation-error"
+import { defaultHook } from "./lib/openApi.js"
 
-const orderApi = new Hono<{ Variables: JwtVariables }>()
+const orderApi = new OpenAPIHono<{ Variables: JwtVariables }>({ defaultHook })
 
-/**
- * @description Body validation schema for order creation
- */
-const orderNewSchema = z.object({
-  ingredients: z.string().cuid().array(),
+/* Order creation route & validators */
+const newRoute = createRoute({
+  method: "post",
+  path: "/new",
+  description: "Create a new order",
+  tags: ["Orders"],
+  middleware: [jwtMiddleware()] as const,
+  security: [{ Bearer: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            ingredients: z
+              .string()
+              .cuid()
+              .array()
+              .openapi({ description: "Array of ingredient ids" }),
+          }),
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: "Order created",
+      content: {
+        "application/json": {
+          schema: z.object({
+            id: z.string().cuid(),
+            status: z.nativeEnum($Enums.OrderStatus),
+            userId: z.string().cuid(),
+            createdAt: z.string().datetime(),
+            modifiedAt: z.string().datetime(),
+          }),
+        },
+      },
+    },
+    403: {
+      description: "Orders are currently disabled",
+    },
+  },
 })
 
-/* Restrict endpoint to authenticated users */
-orderApi.use("/new", jwtMiddleware())
-
 /* Order creation */
-orderApi.post("/new", async (c) => {
+orderApi.openapi(newRoute, async (c) => {
   /* Check if ordering is allowed */
   const { allowOrders } = await getConfig()
   if (!allowOrders) {
     throw errorResponse(403, "Orders are currently disabled")
   }
 
-  /* Validate request body */
-  const bodyRaw = await c.req.json().catch(() => {
-    throw errorResponse(400, "A JSON body must be supplied")
-  })
-  const { success, data: body, error } = orderNewSchema.safeParse(bodyRaw)
-  if (!success) {
-    throw bodyErrorResponse(400, error)
-  }
+  const body = c.req.valid("json")
 
   /* Format ingredients for prisma orm call */
   const ingredientsConnect = body.ingredients
@@ -69,22 +96,83 @@ orderApi.post("/new", async (c) => {
 /* Restrict all other order endpoint to admins only */
 orderApi.use("/*", jwtMiddleware(["ADMIN"]))
 
-/**
- * @description Query params validation schema for listing orders
- */
-const orderListSchema = z.object({
-  status: z.nativeEnum($Enums.OrderStatus).optional(),
-  uid: z.string().cuid().optional(),
+/* List orders route & validators */
+const listRoute = createRoute({
+  method: "get",
+  path: "/list",
+  description: "List orders",
+  tags: ["Orders"],
+  security: [{ Bearer: [] }],
+  request: {
+    query: z.object({
+      status: z.nativeEnum($Enums.OrderStatus).optional(),
+      uid: z.string().cuid().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "List of orders\n\n**Note:** Needs administrator privileges",
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              id: z
+                .string()
+                .cuid()
+                .openapi({ example: "cma5lq0jp0000uixpp28j2tn2" }),
+              userId: z
+                .string()
+                .cuid()
+                .openapi({ example: "cma5gkd0w0000uirfnsphed8q" }),
+              createdAt: z
+                .string()
+                .datetime()
+                .openapi({ example: "2025-05-01T16:50:50.053Z" }),
+              modifiedAt: z
+                .string()
+                .datetime()
+                .openapi({ example: "2025-05-01T16:50:50.053Z" }),
+              status: z
+                .nativeEnum($Enums.OrderStatus)
+                .openapi({ example: "INQUEUE" }),
+              ingredients: z
+                .object({
+                  ingredient: z.object({
+                    id: z
+                      .string()
+                      .cuid()
+                      .openapi({ example: "cm81u650u0000uikohrtioywn" }),
+                    createdAt: z
+                      .string()
+                      .datetime()
+                      .openapi({ example: "2025-03-09T16:16:49.902Z" }),
+                    modifiedAt: z
+                      .string()
+                      .datetime()
+                      .openapi({ example: "2025-03-09T16:16:49.902Z" }),
+                    name: z.string().openapi({ example: "Toastbrot" }),
+                    type: z
+                      .nativeEnum($Enums.IngredientTypes)
+                      .openapi({ example: "BREAD" }),
+                    enabled: z.boolean().openapi({ example: true }),
+                  }),
+                  ingredientNumber: z.number().int().openapi({
+                    example: 1,
+                    description: "The amount of this ingredient",
+                  }),
+                })
+                .array(),
+            })
+            .array(),
+        },
+      },
+    },
+  },
 })
 
 /* List orders */
-orderApi.get("/list", async (c) => {
-  /* Validate query params */
-  const queryRaw = c.req.query()
-  const { success, data: query, error } = orderListSchema.safeParse(queryRaw)
-  if (!success) {
-    throw bodyErrorResponse(400, error, "query")
-  }
+orderApi.openapi(listRoute, async (c) => {
+  const query = c.req.valid("query")
 
   /* Get orders from db with constraints from query params */
   const orders = await prisma.order.findMany({
@@ -108,41 +196,54 @@ orderApi.get("/list", async (c) => {
   return c.json(orders)
 })
 
-/**
- * @description Body validation schema for modifying orders
- */
-const orderModifySchema = z.object({
-  ingredients: z.string().cuid().array().optional(),
-  status: z.nativeEnum($Enums.OrderStatus).optional(),
+/* Modify order route & validators */
+const modifyRoute = createRoute({
+  method: "patch",
+  path: "/modify/{id}",
+  description: "Modify an order\n\n**Note:** Needs administrator privileges",
+  tags: ["Orders"],
+  security: [{ Bearer: [] }],
+  request: {
+    params: z.object({
+      id: z.string().cuid(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            ingredients: z.string().cuid().array().optional(),
+            status: z.nativeEnum($Enums.OrderStatus).optional(),
+          }),
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: "Updated database entry",
+      content: {
+        "application/json": {
+          schema: z.object({
+            id: z.string().cuid(),
+            userId: z.string().cuid(),
+            createdAt: z.string().datetime(),
+            modifiedAt: z.string().datetime(),
+            status: z.nativeEnum($Enums.OrderStatus),
+          }),
+        },
+      },
+    },
+    404: {
+      description: "The order specified does not exist",
+    },
+  },
 })
 
 /* Modify order */
-orderApi.patch("/modify/:id", async (c) => {
-  /* Validate id in url */
-  const id = c.req.param("id")
-  const { success: successParam, error: errorParam } = z
-    .string()
-    .cuid()
-    .safeParse(id)
-  if (!successParam) {
-    throw errorResponse(
-      400,
-      "Issue with id: " + fromError(errorParam, { prefix: null }),
-    )
-  }
-
-  /* Validate request body */
-  const bodyRaw = await c.req.json().catch(() => {
-    throw errorResponse(400, "A JSON body must be supplied")
-  })
-  const {
-    success: successBody,
-    data: body,
-    error: errorBody,
-  } = orderModifySchema.safeParse(bodyRaw)
-  if (!successBody) {
-    throw bodyErrorResponse(400, errorBody)
-  }
+orderApi.openapi(modifyRoute, async (c) => {
+  const id = c.req.valid("param").id
+  const body = c.req.valid("json")
 
   /* Get order from db */
   const order = await prisma.order.findFirst({
@@ -263,17 +364,28 @@ orderApi.patch("/modify/:id", async (c) => {
   }
 })
 
+/* Delete order route & validators */
+const deleteRoute = createRoute({
+  method: "delete",
+  path: "/delete/{id}",
+  description: "Delete an order\n\n**Note:** Needs administrator privileges",
+  tags: ["Orders"],
+  security: [{ Bearer: [] }],
+  request: {
+    params: z.object({
+      id: z.string().cuid(),
+    }),
+  },
+  responses: {
+    204: {
+      description: "Order got deleted",
+    },
+  },
+})
+
 /* Delete order */
-orderApi.delete("/delete/:id", async (c) => {
-  /* Validate id in url */
-  const id = c.req.param("id")
-  const { success, error } = z.string().cuid().safeParse(id)
-  if (!success) {
-    throw errorResponse(
-      400,
-      "Issue with id: " + fromError(error, { prefix: null }).toString(),
-    )
-  }
+orderApi.openapi(deleteRoute, async (c) => {
+  const id = c.req.valid("param").id
 
   /* Delete order in db */
   await prisma.order

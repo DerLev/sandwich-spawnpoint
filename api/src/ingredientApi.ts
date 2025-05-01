@@ -1,35 +1,70 @@
-import { Hono } from "hono"
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi"
 import { jwtMiddleware, type JwtVariables } from "./lib/jwtAuth.js"
-import { z } from "zod"
-import errorResponse, { bodyErrorResponse } from "./lib/errorResponse.js"
+import errorResponse from "./lib/errorResponse.js"
 import prisma from "./lib/prismaInstance.js"
 import { $Enums } from "@prisma/client"
-import { fromError } from "zod-validation-error"
+import { defaultHook } from "./lib/openApi.js"
 
-const ingredientApi = new Hono<{ Variables: JwtVariables }>()
-
-/**
- * @description Query params validation schema for listing ingredients
- */
-const ingredientListSchema = z.object({
-  all: z.enum(["true", "false"]).optional(),
+const ingredientApi = new OpenAPIHono<{ Variables: JwtVariables }>({
+  defaultHook,
 })
 
-/* Restrict listing of ingredients to authenticated users */
-ingredientApi.use("/list", jwtMiddleware())
+/* Ingredient list route & validators */
+const listRoute = createRoute({
+  method: "get",
+  path: "/list",
+  description:
+    "Get a list of ingredients\n\n**Note:** Needs administrator privileges for listing all ingredients",
+  tags: ["Ingredients"],
+  middleware: [jwtMiddleware()] as const,
+  security: [{ Bearer: [] }],
+  request: {
+    query: z.object({
+      all: z.enum(["true", "false"]).optional().openapi({
+        example: "false",
+        description:
+          "Lists all ingredients or just enabled ones\n\n**Note:** Needs administrator privileges for listing all ingredients",
+      }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "List of ingredients",
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              id: z
+                .string()
+                .cuid()
+                .openapi({ example: "cm81u650u0000uikohrtioywn" }),
+              createdAt: z
+                .string()
+                .datetime()
+                .openapi({ example: "2025-03-09T16:16:49.902Z" }),
+              modifiedAt: z
+                .string()
+                .datetime()
+                .openapi({ example: "2025-03-09T16:16:49.902Z" }),
+              name: z.string().openapi({ example: "Toastbrot" }),
+              type: z
+                .nativeEnum($Enums.IngredientTypes)
+                .openapi({ example: "BREAD" }),
+              enabled: z.boolean().openapi({ example: true }),
+              _count: z.object({
+                orders: z.number().int().openapi({ example: 0 }),
+              }),
+            })
+            .array(),
+        },
+      },
+    },
+  },
+})
 
 /* List ingredients */
-ingredientApi.get("/list", async (c) => {
-  /* Validate request query params */
-  const queryRaw = c.req.query()
-  const {
-    success,
-    data: query,
-    error,
-  } = ingredientListSchema.safeParse(queryRaw)
-  if (!success) {
-    throw bodyErrorResponse(400, error, "query")
-  }
+ingredientApi.openapi(listRoute, async (c) => {
+  const query = c.req.valid("query")
 
   /* Display disabled ingredients if param is set and user is admin */
   let withDisabled = false
@@ -57,25 +92,61 @@ ingredientApi.get("/list", async (c) => {
 /* Restrict all other ingredient endpoints to admins only */
 ingredientApi.use("/*", jwtMiddleware(["ADMIN"]))
 
-/**
- * @description Body validation schema for adding ingredients
- */
-const ingredientAddSchema = z.object({
-  name: z.string(),
-  type: z.nativeEnum($Enums.IngredientTypes),
-  enabled: z.boolean().default(true),
+/* Add ingredients route & validators */
+const addRoute = createRoute({
+  method: "post",
+  path: "/add",
+  description:
+    "Add ingredients to the database\n\n**Note:** Needs administrator privileges",
+  tags: ["Ingredients"],
+  security: [{ Bearer: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            name: z.string(),
+            type: z.nativeEnum($Enums.IngredientTypes),
+            enabled: z.boolean().default(true),
+          }),
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: "The created database entry",
+      content: {
+        "application/json": {
+          schema: z.object({
+            id: z
+              .string()
+              .cuid()
+              .openapi({ example: "cm81u650u0000uikohrtioywn" }),
+            createdAt: z
+              .string()
+              .datetime()
+              .openapi({ example: "2025-03-09T16:16:49.902Z" }),
+            modifiedAt: z
+              .string()
+              .datetime()
+              .openapi({ example: "2025-03-09T16:16:49.902Z" }),
+            name: z.string().openapi({ example: "Toastbrot" }),
+            type: z
+              .nativeEnum($Enums.IngredientTypes)
+              .openapi({ example: "BREAD" }),
+            enabled: z.boolean().openapi({ example: true }),
+          }),
+        },
+      },
+    },
+  },
 })
 
 /* Add ingredient */
-ingredientApi.post("/add", async (c) => {
-  /* Validate request body */
-  const bodyRaw = await c.req.json().catch(() => {
-    throw errorResponse(400, "A JSON body must be supplied")
-  })
-  const { success, data: body, error } = ingredientAddSchema.safeParse(bodyRaw)
-  if (!success) {
-    throw bodyErrorResponse(400, error)
-  }
+ingredientApi.openapi(addRoute, async (c) => {
+  const body = c.req.valid("json")
 
   /* Create ingredient in db */
   const ingredient = await prisma.ingredient.create({ data: body })
@@ -83,42 +154,65 @@ ingredientApi.post("/add", async (c) => {
   return c.json(ingredient, 201)
 })
 
-/**
- * @description Body validation schema for modifying ingredients
- */
-const ingredientModifySchema = z.object({
-  name: z.string().optional(),
-  type: z.nativeEnum($Enums.IngredientTypes).optional(),
-  enabled: z.boolean().optional(),
+/* Modify ingredient route & validators */
+const modifyRoute = createRoute({
+  method: "patch",
+  path: "/modify/{id}",
+  description:
+    "Modify an ingredient\n\n**Note:** Needs administrator privileges",
+  tags: ["Ingredients"],
+  security: [{ Bearer: [] }],
+  request: {
+    params: z.object({
+      id: z.string().cuid(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            name: z.string().optional(),
+            type: z.nativeEnum($Enums.IngredientTypes).optional(),
+            enabled: z.boolean().optional(),
+          }),
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: "Updated database entry",
+      content: {
+        "application/json": {
+          schema: z.object({
+            id: z
+              .string()
+              .cuid()
+              .openapi({ example: "cm81u650u0000uikohrtioywn" }),
+            createdAt: z
+              .string()
+              .datetime()
+              .openapi({ example: "2025-03-09T16:16:49.902Z" }),
+            modifiedAt: z
+              .string()
+              .datetime()
+              .openapi({ example: "2025-03-09T16:16:49.902Z" }),
+            name: z.string().openapi({ example: "Toastbrot" }),
+            type: z
+              .nativeEnum($Enums.IngredientTypes)
+              .openapi({ example: "BREAD" }),
+            enabled: z.boolean().openapi({ example: true }),
+          }),
+        },
+      },
+    },
+  },
 })
 
 /* Modify ingredient */
-ingredientApi.patch("/modify/:id", async (c) => {
-  /* Validate id in url */
-  const id = c.req.param("id")
-  const { success: successParam, error: errorParam } = z
-    .string()
-    .cuid()
-    .safeParse(id)
-  if (!successParam) {
-    throw errorResponse(
-      400,
-      "Issue with id: " + fromError(errorParam, { prefix: null }).toString(),
-    )
-  }
-
-  /* Validate request body */
-  const bodyRaw = await c.req.json().catch(() => {
-    throw errorResponse(400, "A JSON body must be supplied")
-  })
-  const {
-    success: successBody,
-    data: body,
-    error: errorBody,
-  } = ingredientModifySchema.safeParse(bodyRaw)
-  if (!successBody) {
-    throw bodyErrorResponse(400, errorBody)
-  }
+ingredientApi.openapi(modifyRoute, async (c) => {
+  const id = c.req.valid("param").id
+  const body = c.req.valid("json")
 
   /* Get ingredient from db */
   const ingredient = await prisma.ingredient.findFirst({
@@ -142,17 +236,35 @@ ingredientApi.patch("/modify/:id", async (c) => {
   return c.json(updatedIngredient)
 })
 
+/* Delete ingredient route & validators */
+const deleteRoute = createRoute({
+  method: "delete",
+  path: "/delete/{id}",
+  description:
+    "Delete an ingredient\n\n**Note:** Needs administrator privileges",
+  tags: ["Ingredients"],
+  security: [{ Bearer: [] }],
+  request: {
+    params: z.object({
+      id: z.string().cuid(),
+    }),
+  },
+  responses: {
+    204: {
+      description: "Ingredient is deleted",
+    },
+    404: {
+      description: "Ingredient does not exist",
+    },
+    400: {
+      description: "Error with input or ingredient is assigned to orders",
+    },
+  },
+})
+
 /* Delete ingredient */
-ingredientApi.delete("/delete/:id", async (c) => {
-  /* Validate id in url */
-  const id = c.req.param("id")
-  const { success, error } = z.string().cuid().safeParse(id)
-  if (!success) {
-    throw errorResponse(
-      400,
-      "Issue with id: " + fromError(error, { prefix: null }).toString(),
-    )
-  }
+ingredientApi.openapi(deleteRoute, async (c) => {
+  const id = c.req.valid("param").id
 
   /* Check if ingredient does exist */
   const ingredient = await prisma.ingredient.findFirst({

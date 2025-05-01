@@ -1,15 +1,15 @@
-import { Hono } from "hono"
+import { OpenAPIHono, z, createRoute } from "@hono/zod-openapi"
 import { generateJwt, jwtMiddleware, type JwtVariables } from "./lib/jwtAuth.js"
 import errorResponse, { bodyErrorResponse } from "./lib/errorResponse.js"
 import prisma from "./lib/prismaInstance.js"
-import { z } from "zod"
 import { $Enums } from "@prisma/client"
 import castStringToBoolean from "./lib/castStringToBoolean.js"
 import { validateConfigPassword } from "./lib/appConfig.js"
 import { addBfAttempt, checkForBruteforce } from "./lib/bruteforceProtection.js"
 import { getConnInfo } from "@hono/node-server/conninfo"
+import { defaultHook } from "./lib/openApi.js"
 
-const userApi = new Hono<{ Variables: JwtVariables }>()
+const userApi = new OpenAPIHono<{ Variables: JwtVariables }>({ defaultHook })
 
 /**
  * @description Body validation schema for user creation
@@ -18,8 +18,45 @@ const userNewSchema = z.object({
   name: z.string(),
 })
 
+/* User creation route & validators */
+const newRoute = createRoute({
+  method: "post",
+  path: "/new",
+  description: "Create a new user",
+  tags: ["Users"],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            name: z.string(),
+          }),
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      description: "User with JWT for authentication",
+      content: {
+        "application/json": {
+          schema: z.object({
+            id: z.string().cuid(),
+            createdAt: z.string().datetime(),
+            name: z.string(),
+            role: z.nativeEnum($Enums.Role),
+            token: z.string().jwt(),
+            expiresIn: z.number().int().openapi({ example: 64800 }),
+          }),
+        },
+      },
+    },
+  },
+})
+
 /* User creation */
-userApi.post("/new", async (c) => {
+userApi.openapi(newRoute, async (c) => {
   /* Validate request body */
   const bodyRaw = await c.req.json().catch(() => {
     throw errorResponse(400, "A JSON body must be supplied")
@@ -45,31 +82,89 @@ userApi.post("/new", async (c) => {
 /* Restrict userinfo endpoint to logged in users */
 userApi.use("/me", jwtMiddleware())
 
+/* Userinfo route */
+const meRoute = createRoute({
+  method: "get",
+  path: "/me",
+  description: "Info about the user making the request",
+  tags: ["Users"],
+  middleware: [jwtMiddleware()] as const,
+  security: [{ Bearer: [] }],
+  responses: {
+    200: {
+      description: "User info",
+      content: {
+        "application/json": {
+          schema: z.object({
+            sub: z.string().cuid(),
+            name: z.string(),
+            iat: z.number().int(),
+            exp: z.number().int(),
+            role: z.nativeEnum($Enums.Role),
+            createdAt: z.string().datetime(),
+            expiresAt: z.string().datetime(),
+          }),
+        },
+      },
+    },
+  },
+})
+
 /* Userinfo endpoint */
-userApi.get("/me", (c) => {
+userApi.openapi(meRoute, (c) => {
   return c.json(c.get("jwtPayload"))
 })
 
-/**
- * @description Query params validation schema for listing users
- */
-const userListSchema = z.object({
-  role: z.nativeEnum($Enums.Role).optional(),
-  id: z.string().cuid().optional(),
-  orders: z.enum(["true", "false"]).optional(),
+/* List users route & validators */
+const listRoute = createRoute({
+  method: "get",
+  path: "/list",
+  description: "List users\n\n**Note:** Needs administrator privileges",
+  tags: ["Users"],
+  middleware: [jwtMiddleware(["ADMIN"])] as const,
+  security: [{ Bearer: [] }],
+  request: {
+    query: z.object({
+      role: z.nativeEnum($Enums.Role).optional(),
+      id: z.string().cuid().optional(),
+      orders: z
+        .enum(["true", "false"])
+        .optional()
+        .openapi({ example: "false" }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "List of users",
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              id: z.string().cuid(),
+              createdAt: z.string().datetime(),
+              name: z.string(),
+              role: z.nativeEnum($Enums.Role),
+              orders: z
+                .object({
+                  id: z.string().cuid(),
+                  userId: z.string().cuid(),
+                  createdAt: z.string().datetime(),
+                  modifiedAt: z.string().datetime(),
+                  status: z.nativeEnum($Enums.OrderStatus),
+                })
+                .array()
+                .optional(),
+            })
+            .array(),
+        },
+      },
+    },
+  },
 })
 
-/* Restrict endpoint to admins only */
-userApi.use("/list", jwtMiddleware(["ADMIN"]))
-
 /* List users */
-userApi.get("/list", async (c) => {
-  /* Validate query params */
-  const queryRaw = c.req.query()
-  const { success, data: query, error } = userListSchema.safeParse(queryRaw)
-  if (!success) {
-    throw bodyErrorResponse(400, error, "query")
-  }
+userApi.openapi(listRoute, async (c) => {
+  const query = c.req.valid("query")
 
   /* Query database for list of users */
   const Users = await prisma.user.findMany({
@@ -85,30 +180,49 @@ userApi.get("/list", async (c) => {
   return c.json(Users)
 })
 
-/**
- * @description
- */
-const userUpgradeAdminSchema = z.object({
-  password: z.string(),
+/* User admin upgrade route & validators */
+const upgradeAdminRoute = createRoute({
+  method: "post",
+  path: "/upgrade/admin",
+  description:
+    "Upgrade the user making the request to become an admin\n\n**Note:** Cannot be executed by an administrator",
+  tags: ["Users"],
+  middleware: [jwtMiddleware(["USER", "VIP"])] as const,
+  security: [{ Bearer: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            password: z.string(),
+          }),
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: "Upgraded user's details and jwt",
+      content: {
+        "application/json": {
+          schema: z.object({
+            id: z.string().cuid(),
+            createdAt: z.string().datetime(),
+            name: z.string(),
+            role: z.nativeEnum($Enums.Role).openapi({ default: "ADMIN" }),
+            token: z.string().jwt(),
+            expiresIn: z.number().int().openapi({ example: 64800 }),
+          }),
+        },
+      },
+    },
+  },
 })
 
-/* Restrict admin user upgrades to authenticated users that are currently no admin  */
-userApi.use("/upgrade/admin", jwtMiddleware(["USER", "VIP"]))
-
 /* User upgrade to admin */
-userApi.post("/upgrade/admin", async (c) => {
-  /* Validate the request body */
-  const bodyRaw = await c.req.json().catch(() => {
-    throw errorResponse(400, "A JSON body must be supplied")
-  })
-  const {
-    success,
-    data: body,
-    error,
-  } = userUpgradeAdminSchema.safeParse(bodyRaw)
-  if (!success) {
-    throw bodyErrorResponse(400, error)
-  }
+userApi.openapi(upgradeAdminRoute, async (c) => {
+  const body = c.req.valid("json")
 
   /* Get all info about the client */
   const connectionInfo = getConnInfo(c)
