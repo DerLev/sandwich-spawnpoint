@@ -22,7 +22,7 @@ const getRoute = createRoute({
 })
 
 configApi.openapi(getRoute, async (c) => {
-  const config = await getConfig()
+  const config = await getConfig(true)
   return c.json(config)
 })
 
@@ -74,6 +74,11 @@ configApi.openapi(modifyRoute, async (c) => {
   /* Throw if config object does not exist */
   if (!currentConfigObject) {
     throw errorResponse(404, "Config object does not exist")
+  }
+
+  /* Don't allow management of VIP OTPs here */
+  if (currentConfigObject.type === "VIPOTPS") {
+    throw errorResponse(403, "VIP OTPs cannot be managed here!")
   }
 
   /* Hash passwords */

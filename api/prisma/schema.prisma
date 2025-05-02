@@ -21,6 +21,7 @@ enum ConfigType {
   BOOLEAN
   NUMBER
   PASSWORD
+  VIPOTPS
 }
 
 model User {

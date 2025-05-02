@@ -20,6 +20,11 @@ const defaultConfig = [
     type: "PASSWORD",
     value: "ChangeMe#1",
   },
+  {
+    key: "vipOtps",
+    type: "VIPOTPS",
+    value: "",
+  },
 ] as const
 
 /**
@@ -86,6 +91,7 @@ type ConfigTypeMap = {
   NUMBER: number
   BOOLEAN: boolean
   PASSWORD: string
+  VIPOTPS: string[]
 }
 
 /* Some TS magic made by claude.ai */
@@ -101,31 +107,42 @@ type ConfigObject = {
 /**
  * Get the app config from the DB
  * @description NOTE: This fetches from the DB every time. This will need to be cached if app grows
+ * @param stripSensitive Whether the function should strip sensitive data like otp codes
  * @returns App config
  */
-export const getConfig = async () => {
+export const getConfig = async (stripSensitive = false) => {
   /* Get config from DB */
   const Config = await prisma.config.findMany()
 
   /* Cast config values into the right types */
   const castConfig = Config.map((row) => {
-    if (row.type === "BOOLEAN") {
-      if (row.value === "true" || row.value === "True") {
-        return { ...row, value: true }
-      } else {
-        return { ...row, value: false }
-      }
-    } else if (row.type === "NUMBER") {
-      return { ...row, value: Number(row.value) }
-    } else if (row.type === "PASSWORD") {
-      return
-    } else {
-      return row
+    switch (row.type) {
+      case "BOOLEAN":
+        if (row.value === "true" || row.value === "True") {
+          return { ...row, value: true }
+        } else {
+          return { ...row, value: false }
+        }
+      case "NUMBER":
+        return { ...row, value: Number(row.value) }
+      case "PASSWORD":
+        return
+      case "VIPOTPS":
+        if (stripSensitive) {
+          return
+        } else {
+          return {
+            ...row,
+            value: row.value.split(",").filter((item) => item.length),
+          }
+        }
+      default:
+        return row
     }
   }).filter((item) => item !== undefined)
 
   /* Convert array into object */
-  const resObject: { [key: string]: string | boolean | number } = {}
+  const resObject: { [key: string]: string | boolean | number | string[] } = {}
   castConfig.forEach((row) => {
     resObject[row.key] = row.value
   })
@@ -191,4 +208,53 @@ export const validateConfigPassword = async <
   const isPasswordValid = await verify(configRow.value, value)
 
   return isPasswordValid
+}
+
+/**
+ * Create an OTP code for upgrading accounts to vip
+ * @returns A generated otp code for vip upgrading
+ */
+export const createVipOtp = async () => {
+  const config = await getConfig()
+
+  /* Array of the current OTP codes */
+  const currentOtps = config.vipOtps
+
+  /* The new OTP to be added to the array */
+  const newOtp = Math.floor(
+    Number(Math.random().toFixed(6)) * 1000000,
+  ).toString()
+  currentOtps.push(newOtp)
+
+  /* Update the row in db */
+  await updateConfig("vipOtps", currentOtps)
+
+  /* Return the code */
+  return newOtp
+}
+
+/**
+ * Check whether an VIP OTP is valid and delete it
+ * @param otp The OTP to be checked
+ * @returns Whether the OTP was in the db or not
+ */
+export const useVipOtp = async (otp: string) => {
+  const config = await getConfig()
+
+  /* Array of the current OTP codes */
+  const currentOtps = config.vipOtps
+
+  /* Filter out the requested OTP */
+  const newOtps = currentOtps.filter((item) => item !== otp)
+
+  /* If the code is not in the array */
+  if (currentOtps.length === newOtps.length) {
+    return false
+  } else {
+    /* Update the row in db */
+    await updateConfig("vipOtps", newOtps)
+
+    /* Return the code */
+    return true
+  }
 }

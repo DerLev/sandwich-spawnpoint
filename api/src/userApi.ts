@@ -4,10 +4,15 @@ import errorResponse, { bodyErrorResponse } from "./lib/errorResponse.js"
 import prisma from "./lib/prismaInstance.js"
 import { $Enums } from "@prisma/client"
 import castStringToBoolean from "./lib/castStringToBoolean.js"
-import { validateConfigPassword } from "./lib/appConfig.js"
+import {
+  createVipOtp,
+  getConfig,
+  useVipOtp,
+  validateConfigPassword,
+} from "./lib/appConfig.js"
 import { addBfAttempt, checkForBruteforce } from "./lib/bruteforceProtection.js"
 import { getConnInfo } from "@hono/node-server/conninfo"
-import { defaultHook } from "./lib/openApi.js"
+import { defaultHook, ErrorSchema } from "./lib/openApi.js"
 
 const userApi = new OpenAPIHono<{ Variables: JwtVariables }>({ defaultHook })
 
@@ -217,6 +222,9 @@ const upgradeAdminRoute = createRoute({
         },
       },
     },
+    403: {
+      description: "Invalid password or user/ip is blocked",
+    },
   },
 })
 
@@ -276,6 +284,228 @@ userApi.openapi(upgradeAdminRoute, async (c) => {
     ...newUserData,
     ...newJwt,
   })
+})
+
+/* User vip upgrade route & validators */
+const upgradeVipRoute = createRoute({
+  method: "post",
+  path: "/upgrade/vip",
+  description:
+    "Upgrade the user making the request to become a VIP\n\n**Note:** Cannot be executed by administrators or VIPs",
+  tags: ["Users"],
+  middleware: [jwtMiddleware(["USER"])] as const,
+  security: [{ Bearer: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            otp: z
+              .string()
+              .length(6)
+              .regex(/\d{6}/)
+              .openapi({ example: "000000" }),
+          }),
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      description: "Upgraded user's details and jwt",
+      content: {
+        "application/json": {
+          schema: z.object({
+            id: z.string().cuid(),
+            createdAt: z.string().datetime(),
+            name: z.string(),
+            role: z.nativeEnum($Enums.Role).openapi({ default: "VIP" }),
+            token: z.string().jwt(),
+            expiresIn: z.number().int().openapi({ example: 64800 }),
+          }),
+        },
+      },
+    },
+    403: {
+      description: "Invalid otp or user/ip is blocked",
+    },
+  },
+})
+
+/* User upgrade to vip */
+userApi.openapi(upgradeVipRoute, async (c) => {
+  const body = c.req.valid("json")
+
+  /* Get all info about the client */
+  const connectionInfo = getConnInfo(c)
+
+  /* Check if user is not suspected of bruteforcing */
+  const isAllowedToContinue = await checkForBruteforce({
+    uid: c.get("jwtPayload").sub,
+    ip: connectionInfo.remote.address,
+    action: "VIPPROMOTE",
+  })
+
+  if (!isAllowedToContinue) {
+    throw errorResponse(403, "Not allowed to perform action")
+  }
+
+  /* Check if the otp is correct */
+  const isValid = await useVipOtp(body.otp)
+
+  if (!isValid) {
+    /* Record failed attempt in bruteforce table */
+    await addBfAttempt({
+      action: "VIPPROMOTE",
+      ip: connectionInfo.remote.address || "::",
+      uid: c.get("jwtPayload").sub,
+    })
+    throw errorResponse(403, "Invalid otp")
+  }
+
+  /* Update user in DB */
+  const newUserData = await prisma.user.update({
+    where: {
+      id: c.get("jwtPayload").sub,
+    },
+    data: {
+      role: "VIP",
+    },
+  })
+
+  /* Create a new JWT for the user */
+  const newJwt = await generateJwt(
+    newUserData.id,
+    newUserData.name,
+    newUserData.role,
+    c.get("jwtPayload").exp,
+  )
+
+  return c.json({
+    ...newUserData,
+    ...newJwt,
+  })
+})
+
+/* VIP code create route & validators */
+const vipCreateRoute = createRoute({
+  method: "post",
+  path: "/vip/new",
+  description:
+    "Create a new OTP code for VIP upgrading\n\n**Note:** Needs administrator privileges",
+  tags: ["Users"],
+  middleware: [jwtMiddleware(["ADMIN"])] as const,
+  security: [{ Bearer: [] }],
+  responses: {
+    201: {
+      description: "Created OTP code",
+      content: {
+        "application/json": {
+          schema: z.object({
+            otp: z
+              .string()
+              .length(6)
+              .regex(/\d{6}/)
+              .openapi({ example: "000000" }),
+          }),
+        },
+      },
+    },
+  },
+})
+
+/* Create a new OTP code for VIPs */
+userApi.openapi(vipCreateRoute, async (c) => {
+  /* Create a new code */
+  const newCode = await createVipOtp()
+
+  return c.json({ otp: newCode }, 201)
+})
+
+/* VIP list OTPs route & validators */
+const vipListRoute = createRoute({
+  method: "get",
+  path: "/vip/list",
+  description:
+    "List all VIP OTP codes\n\n**Note:** Needs administrator privileges",
+  tags: ["Users"],
+  middleware: [jwtMiddleware(["ADMIN"])] as const,
+  security: [{ Bearer: [] }],
+  responses: {
+    200: {
+      description: "All VIP OTP codes",
+      content: {
+        "application/json": {
+          schema: z
+            .string()
+            .length(6)
+            .regex(/\d{6}/)
+            .openapi({ example: "000000" })
+            .array(),
+        },
+      },
+    },
+  },
+})
+
+/* List all available VIP OTP codes */
+userApi.openapi(vipListRoute, async (c) => {
+  const appConfig = await getConfig()
+
+  return c.json(appConfig.vipOtps)
+})
+
+/* VIP OTP delete route & validators */
+const vipDeleteRoute = createRoute({
+  method: "delete",
+  path: "/vip/delete",
+  description: "Delete an OTP code\n\n**Note:** Needs administrator privileges",
+  tags: ["Users"],
+  middleware: [jwtMiddleware(["ADMIN"])] as const,
+  security: [{ Bearer: [] }],
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            otp: z
+              .string()
+              .length(6)
+              .regex(/\d{6}/)
+              .openapi({ example: "000000" }),
+          }),
+        },
+      },
+      required: true,
+    },
+  },
+  responses: {
+    204: {
+      description: "OTP code got deleted",
+    },
+    404: {
+      description: "The OTP code does not exist",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+  },
+})
+
+/* Delete VIP OTP codes */
+userApi.openapi(vipDeleteRoute, async (c) => {
+  const body = c.req.valid("json")
+
+  const isValid = await useVipOtp(body.otp)
+
+  if (!isValid) {
+    throw errorResponse(404, "OTP code does not exist")
+  }
+
+  return c.body(null, 204)
 })
 
 export default userApi
