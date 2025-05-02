@@ -41,8 +41,42 @@ syncApi.get("/sync", async (c) => {
     )
   }
 
-  /* TODO: Restrict electric endpoints here !!! */
+  /* Restricted queries for users */
+  const allowedQueries = [
+    {
+      table: '"Order"',
+      /* NOTE: No SQL-injection potetial due to this being a signed JWT payload */
+      where: `"userId"='${c.get("jwtPayload").sub}'`,
+    },
+    {
+      table: '"Ingredient"',
+      where: "enabled=true",
+    },
+  ]
 
+  const matchedQuery = allowedQueries.findIndex(
+    (item) => item.table === searchQuery.table,
+  )
+
+  /* Allow all queries to admins */
+  if (c.get("jwtPayload").role !== "ADMIN") {
+    /* 403 if table is not allowed */
+    if (matchedQuery < 0) {
+      throw errorResponse(403, "Query is not allowed")
+    }
+
+    /* 403 if query does not match the defined where clause */
+    if (allowedQueries[matchedQuery].where !== searchQuery.where) {
+      throw errorResponse(
+        403,
+        "Where does not have the allowed value of `" +
+          allowedQueries[matchedQuery].where +
+          "`",
+      )
+    }
+  }
+
+  /* Proxy the ElectricSQL query */
   return proxy(
     `${process.env.ELECTRIC_URL as string}/v1/shape?${toQueryParams(searchQuery)}`,
   )
