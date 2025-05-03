@@ -5,6 +5,7 @@ import api from "./api.js"
 import prisma from "./lib/prismaInstance.js"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { defaultHook } from "./lib/openApi.js"
+import cronJob from "./lib/cronJob.js"
 
 /* === ENV defaults === */
 
@@ -81,6 +82,9 @@ serve(
       try {
         await checkAppConfig()
         console.log("Config checked")
+
+        /* Start cron job */
+        cronJob.start()
       } catch (err) {
         throw new Error("Could not validate/create app config!", { cause: err })
       }

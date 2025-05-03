@@ -18,28 +18,13 @@ export const getAllBfEntries = async () => {
 /**
  * Cleanup bruteforce attempts
  */
-export const cleanupBfAttempts = async () => {
-  const bruteforceEntries = await prisma.bruteforce.findMany()
-
-  const toBeDeleted = bruteforceEntries
-    .map((item) => {
-      if (
-        Math.floor(Date.now() / 1000) -
-          Math.floor(item.createdAt.getTime() / 1000) >
-        bfTimeout
-      ) {
-        return prisma.bruteforce.delete({
-          where: { id: item.id },
-        })
-      }
-      return
-    })
-    .filter((item) => item !== undefined)
-
-  await Promise.all(toBeDeleted).catch((err) => {
-    throw err
-  })
-}
+export const cleanupBfAttempts = prisma.bruteforce.deleteMany({
+  where: {
+    createdAt: {
+      lt: new Date(Date.now() - bfTimeout * 1000),
+    },
+  },
+})
 
 /**
  * Check whether a user can execute an action or not
@@ -78,7 +63,8 @@ export const checkForBruteforce = async (input: {
     const currentAttempts = userBruteforceAttempts
       .map((item) => {
         if (
-          Math.floor(Date.now() / 1000) - Math.floor(Date.now() / 1000) <
+          Math.floor(Date.now() / 1000) -
+            Math.floor(item.createdAt.getTime() / 1000) <
           bfTimeout
         ) {
           return item.id
@@ -105,7 +91,8 @@ export const checkForBruteforce = async (input: {
     const currentAttempts = ipBruteforceAttempts
       .map((item) => {
         if (
-          Math.floor(Date.now() / 1000) - Math.floor(Date.now() / 1000) <
+          Math.floor(Date.now() / 1000) -
+            Math.floor(item.createdAt.getTime() / 1000) <
           bfTimeout
         ) {
           return item.id

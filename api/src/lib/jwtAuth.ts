@@ -10,6 +10,11 @@ const jwtAlgorithm: SignatureAlgorithm = "HS256"
 const jwtSecret = process.env.APP_SECRET as string
 
 /**
+ * Expiration time for JWTs in seconds
+ */
+export const expiresIn = 60 * 60 * 18
+
+/**
  * @description Validation schema for JWTs payload
  */
 const jwtSchema = z.object({
@@ -33,8 +38,6 @@ export const generateJwt = async (
   role: $Enums.Role,
   exp?: number,
 ) => {
-  const expiresIn = 60 * 60 * 18
-
   const payload = jwtSchema.parse({
     sub: uid,
     name,

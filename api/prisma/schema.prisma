@@ -84,7 +84,7 @@ model IngredientOnOrder {
 
 model Bruteforce {
   id        Int               @id @default(autoincrement())
-  user      User?             @relation(fields: [userId], references: [id])
+  user      User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
   userId    String?
   ip        String
   createdAt DateTime          @default(now())
