@@ -4,7 +4,7 @@ import { getConfig } from "./lib/appConfig.js"
 import errorResponse from "./lib/errorResponse.js"
 import prisma from "./lib/prismaInstance.js"
 import { hash } from "argon2"
-import { defaultHook } from "./lib/openApi.js"
+import { defaultHook, ErrorSchema } from "./lib/openApi.js"
 
 const configApi = new OpenAPIHono<{ Variables: JwtVariables }>({ defaultHook })
 
@@ -56,6 +56,39 @@ const modifyRoute = createRoute({
   responses: {
     204: {
       description: "Config key changed",
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is not an admin\n* Managing VIP OTPs must be done at `/api/user/vip`",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    404: {
+      description: "Config object does not exist",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    500: {
+      description: "Error whilst updating config object",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
     },
   },
 })

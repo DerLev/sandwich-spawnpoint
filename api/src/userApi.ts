@@ -1,6 +1,6 @@
 import { OpenAPIHono, z, createRoute } from "@hono/zod-openapi"
 import { generateJwt, jwtMiddleware, type JwtVariables } from "./lib/jwtAuth.js"
-import errorResponse, { bodyErrorResponse } from "./lib/errorResponse.js"
+import errorResponse from "./lib/errorResponse.js"
 import prisma from "./lib/prismaInstance.js"
 import { $Enums } from "@prisma/client"
 import castStringToBoolean from "./lib/castStringToBoolean.js"
@@ -15,13 +15,6 @@ import { getConnInfo } from "@hono/node-server/conninfo"
 import { defaultHook, ErrorSchema } from "./lib/openApi.js"
 
 const userApi = new OpenAPIHono<{ Variables: JwtVariables }>({ defaultHook })
-
-/**
- * @description Body validation schema for user creation
- */
-const userNewSchema = z.object({
-  name: z.string(),
-})
 
 /* User creation route & validators */
 const newRoute = createRoute({
@@ -57,19 +50,20 @@ const newRoute = createRoute({
         },
       },
     },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
   },
 })
 
 /* User creation */
 userApi.openapi(newRoute, async (c) => {
-  /* Validate request body */
-  const bodyRaw = await c.req.json().catch(() => {
-    throw errorResponse(400, "A JSON body must be supplied")
-  })
-  const { success, data: body, error } = userNewSchema.safeParse(bodyRaw)
-  if (!success) {
-    throw bodyErrorResponse(400, error)
-  }
+  const body = c.req.valid("json")
 
   /* Create user */
   const User = await prisma.user.create({
@@ -83,9 +77,6 @@ userApi.openapi(newRoute, async (c) => {
 
   return c.json({ ...User, ...jwt }, 201)
 })
-
-/* Restrict userinfo endpoint to logged in users */
-userApi.use("/me", jwtMiddleware())
 
 /* Userinfo route */
 const meRoute = createRoute({
@@ -109,6 +100,22 @@ const meRoute = createRoute({
             createdAt: z.string().datetime(),
             expiresAt: z.string().datetime(),
           }),
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description: "Authorization header is not valid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
         },
       },
     },
@@ -164,6 +171,31 @@ const listRoute = createRoute({
         },
       },
     },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is not an admin",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
   },
 })
 
@@ -182,7 +214,7 @@ userApi.openapi(listRoute, async (c) => {
     },
   })
 
-  return c.json(Users)
+  return c.json(Users, 200)
 })
 
 /* User admin upgrade route & validators */
@@ -222,8 +254,30 @@ const upgradeAdminRoute = createRoute({
         },
       },
     },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
     403: {
-      description: "Invalid password or user/ip is blocked",
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is an admin\n* User/IP is blocked for bruteforcing\n* Provided password is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
     },
   },
 })
@@ -280,10 +334,13 @@ userApi.openapi(upgradeAdminRoute, async (c) => {
     c.get("jwtPayload").exp,
   )
 
-  return c.json({
-    ...newUserData,
-    ...newJwt,
-  })
+  return c.json(
+    {
+      ...newUserData,
+      ...newJwt,
+    },
+    200,
+  )
 })
 
 /* User vip upgrade route & validators */
@@ -327,8 +384,30 @@ const upgradeVipRoute = createRoute({
         },
       },
     },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
     403: {
-      description: "Invalid otp or user/ip is blocked",
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is already a VIP or admin\n* User/IP is blocked for bruteforcing\n* OTP code is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
     },
   },
 })
@@ -382,10 +461,13 @@ userApi.openapi(upgradeVipRoute, async (c) => {
     c.get("jwtPayload").exp,
   )
 
-  return c.json({
-    ...newUserData,
-    ...newJwt,
-  })
+  return c.json(
+    {
+      ...newUserData,
+      ...newJwt,
+    },
+    200,
+  )
 })
 
 /* VIP code create route & validators */
@@ -409,6 +491,31 @@ const vipCreateRoute = createRoute({
               .regex(/\d{6}/)
               .openapi({ example: "000000" }),
           }),
+        },
+      },
+    },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is not an admin",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
         },
       },
     },
@@ -446,6 +553,31 @@ const vipListRoute = createRoute({
         },
       },
     },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is not an admin",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
   },
 })
 
@@ -453,7 +585,7 @@ const vipListRoute = createRoute({
 userApi.openapi(vipListRoute, async (c) => {
   const appConfig = await getConfig()
 
-  return c.json(appConfig.vipOtps)
+  return c.json(appConfig.vipOtps, 200)
 })
 
 /* VIP OTP delete route & validators */
@@ -483,6 +615,31 @@ const vipDeleteRoute = createRoute({
   responses: {
     204: {
       description: "OTP code got deleted",
+    },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is not an admin",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
     },
     404: {
       description: "The OTP code does not exist",

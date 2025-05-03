@@ -10,7 +10,12 @@ export const defaultHook: Hook<any, any, any, any> = (result) => {
 
 export const ErrorSchema = z
   .object({
-    code: z.number().int().openapi({ description: "HTTP status code" }),
+    code: z
+      .number()
+      .int()
+      .gte(100)
+      .lte(599)
+      .openapi({ description: "HTTP status code" }),
     message: z.string().openapi({ description: "Error details" }),
   })
   .openapi("Error")

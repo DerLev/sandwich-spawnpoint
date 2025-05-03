@@ -1,11 +1,10 @@
 import { OpenAPIHono, z, createRoute } from "@hono/zod-openapi"
-import type { JwtVariables } from "hono/jwt"
-import { jwtMiddleware } from "./lib/jwtAuth.js"
+import { jwtMiddleware, type JwtVariables } from "./lib/jwtAuth.js"
 import { getConfig } from "./lib/appConfig.js"
 import errorResponse from "./lib/errorResponse.js"
 import prisma from "./lib/prismaInstance.js"
 import { $Enums } from "@prisma/client"
-import { defaultHook } from "./lib/openApi.js"
+import { defaultHook, ErrorSchema } from "./lib/openApi.js"
 
 const orderApi = new OpenAPIHono<{ Variables: JwtVariables }>({ defaultHook })
 
@@ -48,8 +47,30 @@ const newRoute = createRoute({
         },
       },
     },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
     403: {
-      description: "Orders are currently disabled",
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* Orders are currently disabled",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
     },
   },
 })
@@ -93,15 +114,14 @@ orderApi.openapi(newRoute, async (c) => {
   return c.json(order, 201)
 })
 
-/* Restrict all other order endpoint to admins only */
-orderApi.use("/*", jwtMiddleware(["ADMIN"]))
-
 /* List orders route & validators */
 const listRoute = createRoute({
   method: "get",
   path: "/list",
-  description: "List orders",
+  description:
+    "List orders\n\n**Note:** Needs administrator privileges to list all orders",
   tags: ["Orders"],
+  middleware: [jwtMiddleware()] as const,
   security: [{ Bearer: [] }],
   request: {
     query: z.object({
@@ -111,7 +131,7 @@ const listRoute = createRoute({
   },
   responses: {
     200: {
-      description: "List of orders\n\n**Note:** Needs administrator privileges",
+      description: "List of orders",
       content: {
         "application/json": {
           schema: z
@@ -167,12 +187,45 @@ const listRoute = createRoute({
         },
       },
     },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is not an admin",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
   },
 })
 
 /* List orders */
 orderApi.openapi(listRoute, async (c) => {
   const query = c.req.valid("query")
+
+  if (c.get("jwtPayload").role !== "ADMIN") {
+    if (query.uid === undefined) {
+      query.uid = c.get("jwtPayload").sub
+    } else if (query.uid !== c.get("jwtPayload").sub) {
+      throw errorResponse(403, "User is not allowed to access all orders!")
+    }
+  }
 
   /* Get orders from db with constraints from query params */
   const orders = await prisma.order.findMany({
@@ -193,7 +246,7 @@ orderApi.openapi(listRoute, async (c) => {
     },
   })
 
-  return c.json(orders)
+  return c.json(orders, 200)
 })
 
 /* Modify order route & validators */
@@ -202,6 +255,7 @@ const modifyRoute = createRoute({
   path: "/modify/{id}",
   description: "Modify an order\n\n**Note:** Needs administrator privileges",
   tags: ["Orders"],
+  middleware: [jwtMiddleware(["ADMIN"])] as const,
   security: [{ Bearer: [] }],
   request: {
     params: z.object({
@@ -231,6 +285,31 @@ const modifyRoute = createRoute({
             modifiedAt: z.string().datetime(),
             status: z.nativeEnum($Enums.OrderStatus),
           }),
+        },
+      },
+    },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is not an admin",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
         },
       },
     },
@@ -350,7 +429,7 @@ orderApi.openapi(modifyRoute, async (c) => {
       },
     })
 
-    return c.json(modifiedOrder)
+    return c.json(modifiedOrder, 200)
   } else {
     /* Update order in db */
     const modifiedOrder = await prisma.order.update({
@@ -360,7 +439,7 @@ orderApi.openapi(modifyRoute, async (c) => {
       },
     })
 
-    return c.json(modifiedOrder)
+    return c.json(modifiedOrder, 200)
   }
 })
 
@@ -368,8 +447,10 @@ orderApi.openapi(modifyRoute, async (c) => {
 const deleteRoute = createRoute({
   method: "delete",
   path: "/delete/{id}",
-  description: "Delete an order\n\n**Note:** Needs administrator privileges",
+  description:
+    "Delete an order\n\n**Note:** Non-admins can only delete their orders if they are in queue. Admins can delete all orders",
   tags: ["Orders"],
+  middleware: [jwtMiddleware()] as const,
   security: [{ Bearer: [] }],
   request: {
     params: z.object({
@@ -380,12 +461,74 @@ const deleteRoute = createRoute({
     204: {
       description: "Order got deleted",
     },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is not an admin\n* Order is not made by the user\n* Order is not in queue",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    404: {
+      description: "Order does not exist",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    500: {
+      description: "Order could not be deleted",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
   },
 })
 
 /* Delete order */
 orderApi.openapi(deleteRoute, async (c) => {
   const id = c.req.valid("param").id
+
+  /* Additional checks for non-admins */
+  if (c.get("jwtPayload").role !== "ADMIN") {
+    const order = await prisma.order.findFirst({
+      where: { id },
+    })
+
+    if (!order) {
+      throw errorResponse(404, "Order could not be found")
+    }
+
+    /* Order needs to be owned by the user */
+    if (order.userId !== c.get("jwtPayload").sub) {
+      throw errorResponse(403, "Order is not made by the User!")
+    }
+
+    /* Order needs to have status of "INQUEUE" */
+    if (order.status !== "INQUEUE") {
+      throw errorResponse(403, "Order is not in queue!")
+    }
+  }
 
   /* Delete order in db */
   await prisma.order

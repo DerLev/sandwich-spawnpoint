@@ -3,7 +3,7 @@ import { jwtMiddleware, type JwtVariables } from "./lib/jwtAuth.js"
 import errorResponse from "./lib/errorResponse.js"
 import prisma from "./lib/prismaInstance.js"
 import { $Enums } from "@prisma/client"
-import { defaultHook } from "./lib/openApi.js"
+import { defaultHook, ErrorSchema } from "./lib/openApi.js"
 
 const ingredientApi = new OpenAPIHono<{ Variables: JwtVariables }>({
   defaultHook,
@@ -59,6 +59,31 @@ const listRoute = createRoute({
         },
       },
     },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is not an admin",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
   },
 })
 
@@ -86,7 +111,7 @@ ingredientApi.openapi(listRoute, async (c) => {
     },
   })
 
-  return c.json(ingredients)
+  return c.json(ingredients, 200)
 })
 
 /* Restrict all other ingredient endpoints to admins only */
@@ -138,6 +163,31 @@ const addRoute = createRoute({
               .openapi({ example: "BREAD" }),
             enabled: z.boolean().openapi({ example: true }),
           }),
+        },
+      },
+    },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is not an admin",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
         },
       },
     },
@@ -206,6 +256,39 @@ const modifyRoute = createRoute({
         },
       },
     },
+    400: {
+      description: "Input is invalid",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is not an admin",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    404: {
+      description: "Ingredient does not exist",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
   },
 })
 
@@ -233,7 +316,7 @@ ingredientApi.openapi(modifyRoute, async (c) => {
     data: body,
   })
 
-  return c.json(updatedIngredient)
+  return c.json(updatedIngredient, 200)
 })
 
 /* Delete ingredient route & validators */
@@ -253,11 +336,47 @@ const deleteRoute = createRoute({
     204: {
       description: "Ingredient is deleted",
     },
+    400: {
+      description:
+        "Multiple causes:\n* Error with input\n* Ingredient is assigned to orders",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    401: {
+      description: "No authorization header provided",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
+    403: {
+      description:
+        "Multiple causes:\n* Authorization header is not valid\n* User is not an admin",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+    },
     404: {
       description: "Ingredient does not exist",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
     },
-    400: {
-      description: "Error with input or ingredient is assigned to orders",
+    500: {
+      description: "Ingredient could not be deleted",
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
     },
   },
 })
