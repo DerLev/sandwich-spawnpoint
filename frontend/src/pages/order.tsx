@@ -2,7 +2,7 @@ import { useShape } from "@electric-sql/react"
 import apiBaseUrl from "../apiBaseUrl"
 import useUser, { getUserToken } from "../lib/useUser"
 import { useCallback, useEffect, useState } from "react"
-import type { OrderList, OrderNew } from "../types/order"
+import type { OrderList, OrderNew, OrdersShape } from "../types/order"
 import {
   Badge,
   Box,
@@ -36,7 +36,7 @@ const OrderPage = () => {
   const [newOrderIngredients, setNewOrderIngredients] = useState<string[]>([])
   const [newOrderInSubmission, setNewOrderInSubmission] = useState(false)
 
-  const { data: shapeOrders } = useShape({
+  const { data: shapeOrders } = useShape<OrdersShape>({
     url: `${apiBaseUrl()}/sync`,
     params: {
       table: '"Order"',
@@ -59,18 +59,21 @@ const OrderPage = () => {
   })
 
   const fetchOrders = useCallback(async () => {
-    const res: OrderList = await fetch(`${apiBaseUrl()}/order/list`, {
-      headers: {
-        Authorization: `Bearer ${getUserToken()}`,
+    const res: OrderList = await fetch(
+      `${apiBaseUrl()}/order/list?uid=${user.user?.sub}`,
+      {
+        headers: {
+          Authorization: `Bearer ${getUserToken()}`,
+        },
       },
-    }).then((res) => res.json())
+    ).then((res) => res.json())
 
     setOrders(res)
-  }, [])
+  }, [user.user?.sub])
 
-  const missingFromFetched = shapeOrders.filter(
-    (order) => orders.findIndex((item) => item.id === order.id) === -1,
-  )
+  const missingFromFetched = shapeOrders
+    .filter((item) => item.userId === user.user?.sub)
+    .filter((order) => orders.findIndex((item) => item.id === order.id) === -1)
 
   const cancelOrder = useCallback(async (id: string) => {
     try {
