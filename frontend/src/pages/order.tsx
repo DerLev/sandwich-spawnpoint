@@ -10,6 +10,7 @@ import {
   Card,
   Flex,
   Grid,
+  Notification,
   Paper,
   SegmentedControl,
   SegmentedControlItem,
@@ -17,7 +18,7 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core"
-import { IconBasketPlus, IconBasketX } from "@tabler/icons-react"
+import { IconBasketPlus, IconBasketX, IconInfoSmall } from "@tabler/icons-react"
 import ingredientTypeToEmoji from "../lib/ingredientTypeToEmoji"
 import type { IngredientShape } from "../types/ingredient"
 import useAppConfig from "../lib/useAppConfig"
@@ -296,6 +297,15 @@ const OrderPage = () => {
           >
             Bestellung aufgeben
           </Button>
+          {!appConfig.config.allowOrders ? (
+            <Notification
+              withCloseButton={false}
+              color="blue"
+              mt="md"
+              title="Bestellungen sind im Moment ausgeschaltet"
+              icon={<IconInfoSmall size={28} />}
+            />
+          ) : null}
         </Stack>
       </Grid.Col>
     </Grid>
