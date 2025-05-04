@@ -124,9 +124,12 @@ jobs:
     #   (needs.frontend-lint-typecheck.result == 'success' || needs.frontend-lint-typecheck.result == 'skipped') &&
     #   !(needs.api-lint-typecheck.result == 'skipped' && needs.frontend-lint-typecheck.result == 'skipped')
     if: always()
+    environment: Production
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -154,6 +157,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Generate Artifact Attestation
         uses: actions/attest-build-provenance@v2
         with:
