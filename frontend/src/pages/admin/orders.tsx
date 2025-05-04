@@ -18,7 +18,7 @@ import type {
 import { useShape } from "@electric-sql/react"
 import apiBaseUrl from "../../apiBaseUrl"
 import { getUserToken } from "../../lib/useUser"
-import type { UsersShape } from "../../types/user"
+import type { UsersShape, UserTypes } from "../../types/user"
 import type { OrdersShape } from "../../types/order"
 import { useCallback } from "react"
 
@@ -27,6 +27,7 @@ const OrderItem = ({
   ingredients,
   timestamp,
   column,
+  usertype,
   moveLeft,
   moveRight,
   deleteItem,
@@ -35,6 +36,7 @@ const OrderItem = ({
   ingredients: { amount: number; name: string; type: `${IngredientType}` }[]
   timestamp: string
   column: "queue" | "cooking" | "done"
+  usertype: `${UserTypes}`
   moveLeft: () => void
   moveRight: () => void
   deleteItem: () => void
@@ -42,9 +44,29 @@ const OrderItem = ({
   <Paper py="xs" px="md">
     <Group justify="space-between" align="flex-start">
       <Box>
-        <Text size="lg" fw={800}>
-          {username}
-        </Text>
+        <Group>
+          <Text size="lg" fw={800}>
+            {username}
+          </Text>
+          {(() => {
+            switch (usertype) {
+              case "ADMIN":
+                return (
+                  <Badge color="blue" size="xs" radius="sm">
+                    Admin
+                  </Badge>
+                )
+              case "VIP":
+                return (
+                  <Badge color="grape" size="xs" radius="sm">
+                    VIP
+                  </Badge>
+                )
+              default:
+                break
+            }
+          })()}
+        </Group>
         <Box mt={6}>
           <Text size="sm" fw="bold">
             Zutaten
@@ -200,6 +222,7 @@ const OrdersTab = () => {
       timestamp: order.createdAt,
       ingredients: orderIngredients,
       status: order.status,
+      usertype: user?.role || "USER",
     }
   })
 
@@ -214,6 +237,10 @@ const OrdersTab = () => {
               (a, b) =>
                 new Date(a.timestamp).getTime() -
                 new Date(b.timestamp).getTime(),
+            )
+            .sort(
+              (a, b) =>
+                (b.usertype === "VIP" ? 1 : 0) - (a.usertype === "VIP" ? 1 : 0),
             )
             .map((order) => (
               <OrderItem
