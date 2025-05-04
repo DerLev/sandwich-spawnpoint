@@ -31,7 +31,7 @@ const app = new OpenAPIHono({ defaultHook })
 
 if (process.env.NODE_ENV === "production") {
   /* Serve static files */
-  app.use("*", serveStatic({ path: "./public" }))
+  app.use("*", serveStatic({ root: "./public" }))
 } else {
   app.get("/", (c) => {
     return c.text("The app is currently in development mode!")
