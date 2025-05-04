@@ -66,7 +66,7 @@ app.doc31("/oas/openapi.json", {
 })
 
 /* eslint-disable no-console */
-serve(
+const server = serve(
   {
     fetch: app.fetch,
     port: Number(process.env.PORT) || 3000,
@@ -93,4 +93,15 @@ serve(
     }
   },
 )
+
+const shutdown = () => {
+  console.log("Exiting webserver...")
+  cronJob.stop()
+  server.close()
+  console.log("Done! Goodbye")
+  process.exit(0)
+}
 /* eslint-enable */
+
+process.on("SIGINT", shutdown)
+process.on("SIGTERM", shutdown)
