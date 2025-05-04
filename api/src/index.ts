@@ -14,6 +14,11 @@ if (!process.env.NODE_ENV?.length) {
   process.env.NODE_ENV = "development"
 }
 
+/* If no database url is provided stop right here */
+if (!process.env.DATABASE_URL.length) {
+  throw new Error("Supply a database url first! (APP_SECRET)")
+}
+
 /* If no secret is provided stop right here */
 if (!process.env.APP_SECRET?.length) {
   throw new Error("Supply an app secret first! (APP_SECRET)")
