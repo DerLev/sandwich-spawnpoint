@@ -210,6 +210,9 @@ export const validateConfigPassword = async <
   return isPasswordValid
 }
 
+const generateOtp = () =>
+  Math.floor(Number(Math.random().toFixed(6)) * 1000000).toString()
+
 /**
  * Create an OTP code for upgrading accounts to vip
  * @returns A generated otp code for vip upgrading
@@ -221,9 +224,11 @@ export const createVipOtp = async () => {
   const currentOtps = config.vipOtps
 
   /* The new OTP to be added to the array */
-  const newOtp = Math.floor(
-    Number(Math.random().toFixed(6)) * 1000000,
-  ).toString()
+  let newOtp = ""
+  /* Generate new ones until the generated one has 6 digits */
+  while (newOtp.length !== 6) {
+    newOtp = generateOtp()
+  }
   currentOtps.push(newOtp)
 
   /* Update the row in db */
