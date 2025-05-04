@@ -11,8 +11,8 @@ WORKDIR /app
 COPY --from=api-deps /app/node_modules ./node_modules
 COPY api/ .
 
-RUN yarn build
 RUN yarn prisma generate
+RUN yarn build
 RUN rm -rf src/
 
 FROM base AS frontend-deps
