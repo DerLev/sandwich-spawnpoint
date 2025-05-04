@@ -45,10 +45,13 @@ const SettingsTab = () => {
     },
   })
 
-  const openClosePasswordModal = (open: boolean) => {
-    form.reset()
-    setPasswordModalOpen(open)
-  }
+  const openClosePasswordModal = useCallback(
+    (open: boolean) => {
+      form.reset()
+      setPasswordModalOpen(open)
+    },
+    [form],
+  )
 
   const fetchSettings = useCallback(async () => {
     const res: ConfigGet = await fetch(`${apiBaseUrl()}/config/get`, {}).then(
@@ -132,7 +135,7 @@ const SettingsTab = () => {
 
       setPasswordFormLoading(false)
     },
-    [allowOrders, openClosePasswordModal],
+    [openClosePasswordModal],
   )
 
   useEffect(() => {
