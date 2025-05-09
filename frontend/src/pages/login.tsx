@@ -33,7 +33,12 @@ const LoginPage = () => {
       name: "",
     },
     validate: {
-      name: (value) => (value.length ? null : "Darf nicht leer sein"),
+      name: (value) =>
+        value.length
+          ? value.length <= 48
+            ? null
+            : "Darf nicht länger als 48 Zeichen sein"
+          : "Darf nicht leer sein",
     },
   })
 
