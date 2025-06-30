@@ -69,6 +69,10 @@ enum IngredientTypes {
   BREAD
   CHEESE
   MEAT
+  SALAD
+  TOMATO
+  ONION
+  SAUCE
   SPECIAL
 }
 

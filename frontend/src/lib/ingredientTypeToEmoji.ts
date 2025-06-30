@@ -13,6 +13,14 @@ const ingredientTypeToEmoji = (type: `${IngredientType}`) => {
       return "🧀"
     case "MEAT":
       return "🥩"
+    case "SALAD":
+      return "🥬"
+    case "TOMATO":
+      return "🍅"
+    case "ONION":
+      return "🧅"
+    case "SAUCE":
+      return "🍶"
     case "SPECIAL":
       return "✨"
     default:

@@ -2,6 +2,10 @@ export enum IngredientType {
   BREAD = "BREAD",
   CHEESE = "CHEESE",
   MEAT = "MEAT",
+  SALAD = "SALAD",
+  TOMATO = "TOMATO",
+  ONION = "ONION",
+  SAUCE = "SAUCE",
   SPECIAL = "SPECIAL",
 }
 

@@ -183,6 +183,10 @@ const IngredientsTab = () => {
                 { value: "BREAD", label: "Brot" },
                 { value: "CHEESE", label: "Käse" },
                 { value: "MEAT", label: "Fleisch" },
+                { value: "SALAD", label: "Salat" },
+                { value: "TOMATO", label: "Tomate" },
+                { value: "ONION", label: "Zwiebel" },
+                { value: "SAUCE", label: "Sauce" },
                 { value: "SPECIAL", label: "Spezial" },
               ]}
               label="Zutatentyp"
