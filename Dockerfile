@@ -37,6 +37,9 @@ RUN adduser --system --uid 1001 nodejs
 COPY --from=api-builder /app .
 COPY --from=frontend-builder /app/dist public/
 
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
 USER nodejs
 
 EXPOSE 3000
@@ -46,5 +49,7 @@ ENV HOSTNAME=0.0.0.0
 
 LABEL org.opencontainers.image.source="https://github.com/DerLev/sandwich-spawnpoint"
 LABEL org.opencontainers.image.licenses="MIT"
+
+ENTRYPOINT [ "/app/entrypoint.sh" ]
 
 CMD [ "node", "dist/index.js" ]

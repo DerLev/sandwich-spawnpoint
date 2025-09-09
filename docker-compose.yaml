@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: sandwich
+      POSTGRES_USER: sandwich
+      # set db password here
+      POSTGRES_PASSWORD: db-password
+    volumes:
+      # save database locally under pgdata/
+      - ./pgdata:/var/lib/postgresql/data
+    command:
+      - -c
+      - listen_addresses=*
+      - -c
+      - wal_level=logical
+
+  electric:
+    image: electricsql/electric
+    environment:
+      # set db password here
+      DATABASE_URL: postgresql://sandwich:db-password@postgres:5432/sandwich?sslmode=disable
+      ELECTRIC_USAGE_REPORTING: false
+      ELECTRIC_INSECURE: true # auth happens through the api which relays electric
+    depends_on:
+      - postgres
+
+  sandwich:
+    image: ghcr.io/derlev/sandwich-spawnpoint
+    ports:
+      - 3000:3000
+    depends_on:
+      - postgres
+      - electric
+    volumes:
+      - ./.env:/app/.env:ro
