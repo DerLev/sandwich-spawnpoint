@@ -25,9 +25,13 @@ jobs:
             api:
               - 'api/**'
               - '!(api)/**/*.md'
+              - '.github/workflows/integration-deployment.yml'
+              - 'Dockerfile'
             frontend:
               - 'frontend/**'
               - '!(frontend)/**/*.md'
+              - '.github/workflows/integration-deployment.yml'
+              - 'Dockerfile'
   
   # START: API
   api-lint-typecheck:
